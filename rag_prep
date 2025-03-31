@@ -1,0 +1,67 @@
+import os
+import pickle
+from PyPDF2 import PdfReader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import FAISS
+
+def extract_text_from_pdf(pdf_path):
+    """Extract all text from a PDF file."""
+    pdf_reader = PdfReader(pdf_path)
+    text = ""
+    for page in pdf_reader.pages:
+        text += page.extract_text()
+    return text
+
+def chunk_text(text, chunk_size=1000, chunk_overlap=200):
+    """Split text into chunks with specified size and overlap."""
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        length_function=len
+    )
+    chunks = text_splitter.split_text(text)
+    return chunks
+
+def create_embeddings(chunks):
+    """Create embeddings for text chunks using a Hugging Face model."""
+    # Using a smaller model for ease of use
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    
+    # Create a FAISS vector store
+    vector_store = FAISS.from_texts(chunks, embeddings)
+    return vector_store
+
+def main():
+    # Get PDF path from user
+    pdf_path ="" #put pdf path here
+    
+    if not os.path.exists(pdf_path):
+        print(f"File not found: {pdf_path}")
+        return
+    
+    # Extract text from PDF
+    print("Extracting text from PDF...")
+    text = extract_text_from_pdf(pdf_path)
+    
+    # Chunk the text
+    print("Chunking text...")
+    chunks = chunk_text(text)
+    print(f"Created {len(chunks)} chunks")
+    
+    # Create embeddings and vector store
+    print("Creating embeddings (this may take a while)...")
+    vector_store = create_embeddings(chunks)
+    
+    # Save the vector store
+    print("Saving vector store...")
+    vector_store.save_local("faiss_index")
+    
+    # Save the chunks for reference
+    with open("text_chunks.pkl", "wb") as f:
+        pickle.dump(chunks, f)
+    
+    print("Database creation complete! Vector store saved to 'faiss_index' directory.")
+
+if __name__ == "__main__":
+    main()
