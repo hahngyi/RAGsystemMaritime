@@ -1,0 +1,95 @@
+import os
+import pickle
+import google.generativeai as genai
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import FAISS
+
+def load_vector_store():
+    """Load the previously created vector store."""
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    vector_store = FAISS.load_local(
+        "faiss_index",
+        embeddings,
+        allow_dangerous_deserialization=True  # Added this line to allow deserialization
+    )
+    return vector_store
+
+def load_chunks():
+    """Load the text chunks for reference."""
+    with open("text_chunks.pkl", "rb") as f:
+        chunks = pickle.load(f)
+    return chunks
+
+def setup_gemini_api():
+    """Set up the Gemini API with the provided key."""
+    api_key = input("Please enter your Gemini API key: ") # More informative prompt
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-2.0-flash-lite')
+    return model
+
+def find_relevant_context(query, vector_store, chunks, top_k=3):
+    """Find the most relevant chunks based on the query."""
+    # Search the vector store
+    results = vector_store.similarity_search_with_score(query, k=top_k)
+
+    # Extract and combine the relevant chunks
+    relevant_texts = []
+    for doc, score in results:
+        relevant_texts.append(doc.page_content)
+
+    # Join the relevant texts
+    context = "\n\n".join(relevant_texts)
+    return context
+
+def query_gemini(model, query, context):
+    """Query Gemini with the user prompt and retrieved context."""
+    # Construct the prompt with context
+    prompt = f"""
+Context information from document:
+{context}
+
+Please answer based on the above context:
+{query}
+"""
+    # Generate response from Gemini
+    response = model.generate_content(prompt)
+    return response.text
+
+def main():
+    # Check if the database exists
+    if not os.path.exists("faiss_index"):
+        print("Error: Vector database not found. Please run the database builder script first.")
+        return
+
+    # Load vector store and chunks
+    print("Loading RAG database...")
+    vector_store = load_vector_store()
+    chunks = load_chunks()
+
+    # Set up Gemini API
+    print("Setting up Gemini API...")
+    model = setup_gemini_api()
+
+    # Interactive query loop
+    print("\nRAG Query System Ready!")
+    print("Type 'exit' to quit")
+
+    while True:
+        query = input("\nEnter your question: ")
+        if query.lower() == 'exit':
+            break
+
+        # Find relevant context
+        print("Searching for relevant information...")
+        context = find_relevant_context(query, vector_store, chunks)
+
+        # Query Gemini with context
+        print("Querying Gemini...")
+        response = query_gemini(model, query, context)
+
+        # Display the response
+        print("\nResponse:")
+        print(response)
+
+if __name__ == "__main__":
+    main()
